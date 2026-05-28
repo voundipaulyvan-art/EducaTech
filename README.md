@@ -1,12 +1,12 @@
 # EducaTech
-# 🎓 EduTech — Entrepôt de Données Décisionnel
+# EduTech — Entrepôt de Données Décisionnel
 
 > **Projet d'Informatique Décisionnelle (BI) — EPSI 2026**  
 > Analyse des performances et de l'abandon étudiant sur une plateforme universitaire en ligne
 
 ---
 
-## 📊 Problématique
+## Problématique
 
 La plateforme EduTech fait face à des indicateurs préoccupants :
 
@@ -136,7 +136,7 @@ EduTech_Project/
 
 ---
 
-## ⚙️ Processus ETL
+## Processus ETL
 
 ### Jobs Talend
 
@@ -175,7 +175,7 @@ df['flag_a_risque'] = ((df['score_moyen'] < 40) & (df['total_clics'] < 200)).ast
 
 ---
 
-## 📈 KPIs & Mesures DAX
+## KPIs & Mesures DAX
 
 | KPI | Valeur | Mesure DAX |
 |---|---|---|
