@@ -1,0 +1,117 @@
+===Base de données edutech_dw
+
+== Doublure de structure pour la vue datamart_performance
+
+|------
+|Colonne|Type|Null|Valeur par défaut
+|------
+|id_student|int|Non|
+|code_module|varchar(10)|Non|
+|code_presentation|varchar(10)|Non|
+|final_result|varchar(20)|Oui|NULL
+|score_moyen|double|Oui|NULL
+|total_clics|int|Oui|NULL
+|module_presentation_length|int|Oui|NULL
+|annee|varchar(4)|Oui|NULL
+|semestre|varchar(10)|Oui|NULL
+== Doublure de structure pour la vue datamart_risque
+
+|------
+|Colonne|Type|Null|Valeur par défaut
+|------
+|id_student|int|Non|
+|code_module|varchar(10)|Non|
+|code_presentation|varchar(10)|Non|
+|score_moyen|double|Oui|NULL
+|total_clics|int|Oui|NULL
+|flag_a_risque|int|Oui|NULL
+|final_result|varchar(20)|Oui|NULL
+|gender|varchar(10)|Oui|NULL
+|region|varchar(50)|Oui|NULL
+|imd_band|varchar(20)|Oui|NULL
+|age_band|varchar(20)|Oui|NULL
+|disability|varchar(5)|Oui|NULL
+== Structure de la table dim_etudiant
+
+|------
+|Colonne|Type|Null|Valeur par défaut
+|------
+|//**id_student**//|int|Non|
+|gender|varchar(10)|Oui|NULL
+|region|varchar(50)|Oui|NULL
+|highest_education|varchar(50)|Oui|NULL
+|imd_band|varchar(20)|Oui|NULL
+|age_band|varchar(20)|Oui|NULL
+|disability|varchar(5)|Oui|NULL
+|num_of_prev|int|Oui|NULL
+|studied_credits|int|Oui|NULL
+== Structure de la table dim_evaluation
+
+|------
+|Colonne|Type|Null|Valeur par défaut
+|------
+|//**id_assessment**//|int|Non|
+|code_module|varchar(10)|Oui|NULL
+|assessment_type|varchar(20)|Oui|NULL
+|date_assessment|int|Oui|NULL
+|weight|int|Oui|NULL
+== Structure de la table dim_module
+
+|------
+|Colonne|Type|Null|Valeur par défaut
+|------
+|//**code_module**//|varchar(10)|Non|
+|//**code_presentation**//|varchar(10)|Non|
+|module_presentation_length|int|Oui|NULL
+== Structure de la table dim_temps
+
+|------
+|Colonne|Type|Null|Valeur par défaut
+|------
+|//**code_presentation**//|varchar(10)|Non|
+|annee|varchar(4)|Oui|NULL
+|semestre|varchar(10)|Oui|NULL
+== Structure de la table fait_performance_etudiant
+
+|------
+|Colonne|Type|Null|Valeur par défaut
+|------
+|//**id_student**//|int|Non|
+|//**code_module**//|varchar(10)|Non|
+|//**code_presentation**//|varchar(10)|Non|
+|id_assessment|int|Oui|NULL
+|final_result|varchar(20)|Oui|NULL
+|score_moyen|double|Oui|NULL
+|total_clics|int|Oui|NULL
+|flag_a_risque|int|Oui|NULL
+== Structure de la vue datamart_performance
+
+|------
+|Colonne|Type|Null|Valeur par défaut
+|------
+|id_student|int|Non|
+|code_module|varchar(10)|Non|
+|code_presentation|varchar(10)|Non|
+|final_result|varchar(20)|Oui|NULL
+|score_moyen|double|Oui|NULL
+|total_clics|int|Oui|NULL
+|module_presentation_length|int|Oui|NULL
+|annee|varchar(4)|Oui|NULL
+|semestre|varchar(10)|Oui|NULL
+== Structure de la vue datamart_risque
+
+|------
+|Colonne|Type|Null|Valeur par défaut
+|------
+|id_student|int|Non|
+|code_module|varchar(10)|Non|
+|code_presentation|varchar(10)|Non|
+|score_moyen|double|Oui|NULL
+|total_clics|int|Oui|NULL
+|flag_a_risque|int|Oui|NULL
+|final_result|varchar(20)|Oui|NULL
+|gender|varchar(10)|Oui|NULL
+|region|varchar(50)|Oui|NULL
+|imd_band|varchar(20)|Oui|NULL
+|age_band|varchar(20)|Oui|NULL
+|disability|varchar(5)|Oui|NULL

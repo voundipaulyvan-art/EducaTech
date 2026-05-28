@@ -1,0 +1,450 @@
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║              PROJET EDUTECH — CODE SOURCE COMPLET                           ║
+║              Informatique Décisionnelle — EPSI 2026                         ║
+║              Dataset : OULAD (Open University Learning Analytics)            ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TABLE DES MATIÈRES :
+  1. SCRIPTS PYTHON ETL
+     1.1 clean_studentinfo.py
+     1.2 clean_studentassessment.py
+     1.3 aggregate_vle.py
+     1.4 build_fact.py
+     1.5 import_mysql.py
+
+  2. SCRIPTS SQL
+     2.1 Création des tables (Dimensions + Faits)
+     2.2 Clés étrangères (FK)
+     2.3 Vues Data Marts
+
+  3. MESURES DAX (Power BI)
+     3.1 Taux_Abandon
+     3.2 Taux_Echec
+     3.3 Moy_Score
+     3.4 Etudiants_A_Risque
+
+
+════════════════════════════════════════════════════════════════════════════════
+   PARTIE 1 — SCRIPTS PYTHON ETL
+════════════════════════════════════════════════════════════════════════════════
+
+──────────────────────────────────────────────────────────────────────────────
+1.1  clean_studentinfo.py
+     Rôle : Nettoyage du fichier studentInfo.csv
+            Transformation : imd_band vide/null → "Unknown"
+            Résultat : 32 593 lignes écrites dans studentInfo_clean.csv
+──────────────────────────────────────────────────────────────────────────────
+
+import pandas as pd
+
+print("Nettoyage studentInfo...")
+df = pd.read_csv(r"C:\Users\admin\Downloads\EduTech_Project\input\studentInfo.csv")
+print(f"Lignes lues: {len(df)}")
+
+# Règle ETL : Remplacer les valeurs null et vides de imd_band par "Unknown"
+df['imd_band'] = df['imd_band'].fillna('Unknown')
+df['imd_band'] = df['imd_band'].replace('', 'Unknown')
+
+df.to_csv(r"C:\Users\admin\Downloads\EduTech_Project\output\studentInfo_clean.csv", index=False)
+print(f"Terminé ! {len(df)} lignes écrites")
+
+
+──────────────────────────────────────────────────────────────────────────────
+1.2  clean_studentassessment.py
+     Rôle : Nettoyage du fichier studentAssessment.csv
+            Transformation : score null → 0 (étudiant absent ou n'ayant pas rendu)
+            Résultat : 173 912 lignes écrites dans studentAssessment_clean.csv
+──────────────────────────────────────────────────────────────────────────────
+
+import pandas as pd
+
+print("Nettoyage studentAssessment...")
+df = pd.read_csv(r"C:\Users\admin\Downloads\EduTech_Project\input\studentAssessment.csv")
+print(f"Lignes lues: {len(df)}")
+
+# Règle ETL : Remplacer les scores null par 0
+# (étudiant absent ou n'ayant pas rendu l'évaluation)
+df['score'] = df['score'].fillna(0)
+
+df.to_csv(r"C:\Users\admin\Downloads\EduTech_Project\output\studentAssessment_clean.csv", index=False)
+print(f"Terminé ! {len(df)} lignes écrites")
+
+
+──────────────────────────────────────────────────────────────────────────────
+1.3  aggregate_vle.py
+     Rôle : Agrégation des clics de la plateforme VLE (10,6M lignes → 28 237)
+            Calcul du total de clics par étudiant et par module
+            Remplace le Job Talend trop lent sur ce volume de données
+──────────────────────────────────────────────────────────────────────────────
+
+import pandas as pd
+
+print("Chargement du fichier...")
+df = pd.read_csv(r"C:\Users\admin\Downloads\EduTech_Project\input\studentVle.csv")
+
+print("Agrégation en cours...")
+# Agrégation : somme des clics par étudiant et par module
+result = df.groupby(['id_student', 'code_module'])['sum_click'].sum().reset_index()
+result.columns = ['id_student', 'code_module', 'total_clics']
+
+print("Sauvegarde...")
+result.to_csv(r"C:\Users\admin\Downloads\EduTech_Project\output\studentVle_agrege.csv", index=False)
+
+print("Terminé ! Lignes générées:", len(result))
+
+
+──────────────────────────────────────────────────────────────────────────────
+1.4  build_fact.py
+     Rôle : Construction de la table de faits FAIT_PERFORMANCE_ETUDIANT
+            Jointures entre les fichiers nettoyés
+            Calcul des KPIs : score_moyen, total_clics, flag_a_risque
+            Règle flag_a_risque : score_moyen < 40 ET total_clics < 200 → 1, sinon 0
+──────────────────────────────────────────────────────────────────────────────
+
+import pandas as pd
+
+print("Chargement des fichiers...")
+student_info = pd.read_csv(r"C:\Users\admin\Downloads\EduTech_Project\output\studentInfo_clean.csv")
+student_assess = pd.read_csv(r"C:\Users\admin\Downloads\EduTech_Project\output\studentAssessment_clean.csv")
+student_vle = pd.read_csv(r"C:\Users\admin\Downloads\EduTech_Project\output\studentVle_agrege.csv")
+
+print("Calcul du score moyen par étudiant...")
+# Moyenne des scores par étudiant (toutes évaluations confondues)
+score_moyen = student_assess.groupby('id_student')['score'].mean().reset_index()
+score_moyen.columns = ['id_student', 'score_moyen']
+
+print("Jointure des données...")
+fait = student_info.merge(score_moyen, on='id_student', how='left')
+fait = fait.merge(student_vle[['id_student','code_module','total_clics']], on=['id_student','code_module'], how='left')
+
+print("Calcul du flag à risque...")
+# Règle métier : étudiant à risque si score < 40 ET clics < 200
+fait['score_moyen'] = fait['score_moyen'].fillna(0)
+fait['total_clics'] = fait['total_clics'].fillna(0)
+fait['flag_a_risque'] = ((fait['score_moyen'] < 40) & (fait['total_clics'] < 200)).astype(int)
+
+print("Sauvegarde...")
+fait.to_csv(r"C:\Users\admin\Downloads\EduTech_Project\output\FAIT_PERFORMANCE_ETUDIANT.csv", index=False)
+print(f"Terminé ! {len(fait)} lignes générées")
+
+
+──────────────────────────────────────────────────────────────────────────────
+1.5  import_mysql.py
+     Rôle : Import des CSV nettoyés dans la base MySQL edutech_dw
+            Peuplement des tables : dim_module, dim_temps, dim_evaluation,
+            dim_etudiant, fait_performance_etudiant
+──────────────────────────────────────────────────────────────────────────────
+
+import pandas as pd
+import mysql.connector
+
+# Connexion à la base de données MySQL locale
+conn = mysql.connector.connect(
+    host="localhost",      # Serveur local
+    user="root",           # Utilisateur MySQL
+    password="",           # Mot de passe (vide par défaut avec WAMP)
+    database="edutech_dw"  # Notre base de données
+)
+cursor = conn.cursor()
+
+# ============================================================
+# IMPORT DIM_MODULE
+# Charge les informations sur les modules et présentations
+# ============================================================
+print("Import DIM_MODULE...")
+df = pd.read_csv(r"C:\Users\admin\Downloads\EduTech_Project\input\courses.csv")
+for _, row in df.iterrows():
+    cursor.execute("""
+        INSERT IGNORE INTO dim_module (code_module, code_presentation, module_presentation_length)
+        VALUES (%s,%s,%s)
+    """, tuple(row))
+conn.commit()
+print(f"DIM_MODULE : {len(df)} lignes insérées")
+
+# ============================================================
+# IMPORT DIM_TEMPS
+# Extrait l'année et le semestre depuis le code_presentation
+# Ex: "2013B" → année="2013", semestre="B"
+# ============================================================
+print("Import DIM_TEMPS...")
+df = pd.read_csv(r"C:\Users\admin\Downloads\EduTech_Project\input\courses.csv")
+df['annee'] = df['code_presentation'].str[:4]
+df['semestre'] = df['code_presentation'].str[4:]
+df = df[['code_presentation','annee','semestre']].drop_duplicates()
+for _, row in df.iterrows():
+    cursor.execute("""
+        INSERT IGNORE INTO dim_temps (code_presentation, annee, semestre)
+        VALUES (%s,%s,%s)
+    """, tuple(row))
+conn.commit()
+print(f"DIM_TEMPS : {len(df)} lignes insérées")
+
+# ============================================================
+# IMPORT DIM_EVALUATION
+# Charge les évaluations (TMA, CMA, Examen) avec leurs poids
+# ============================================================
+print("Import DIM_EVALUATION...")
+df = pd.read_csv(r"C:\Users\admin\Downloads\EduTech_Project\input\assessments.csv")
+df = df[['id_assessment', 'code_module', 'assessment_type', 'date', 'weight']]
+for _, row in df.iterrows():
+    cursor.execute("""
+        INSERT IGNORE INTO dim_evaluation (id_assessment, code_module, assessment_type, date_assessment, weight)
+        VALUES (%s,%s,%s,%s,%s)
+    """, tuple(row))
+conn.commit()
+print(f"DIM_EVALUATION : {len(df)} lignes insérées")
+
+# ============================================================
+# IMPORT FAIT_PERFORMANCE_ETUDIANT
+# Charge la table de faits avec les KPIs calculés
+# ============================================================
+print("Import FAIT_PERFORMANCE_ETUDIANT...")
+df = pd.read_csv(r"C:\Users\admin\Downloads\EduTech_Project\output\FAIT_PERFORMANCE_ETUDIANT.csv")
+df = df[['id_student','code_module','code_presentation','final_result','score_moyen','total_clics','flag_a_risque']]
+for _, row in df.iterrows():
+    cursor.execute("""
+        INSERT IGNORE INTO fait_performance_etudiant
+        (id_student, code_module, code_presentation, final_result, score_moyen, total_clics, flag_a_risque)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+    """, tuple(row))
+conn.commit()
+print(f"FAIT : {len(df)} lignes insérées")
+
+conn.close()
+print("Tout terminé !")
+
+
+════════════════════════════════════════════════════════════════════════════════
+   PARTIE 2 — SCRIPTS SQL
+════════════════════════════════════════════════════════════════════════════════
+
+──────────────────────────────────────────────────────────────────────────────
+2.1  Création des tables de dimensions et de la table de faits
+──────────────────────────────────────────────────────────────────────────────
+
+-- Création de la base de données
+CREATE DATABASE IF NOT EXISTS edutech_dw;
+USE edutech_dw;
+
+-- ============================================================
+-- DIMENSION ETUDIANT
+-- Contient les informations démographiques des étudiants
+-- ============================================================
+CREATE TABLE IF NOT EXISTS dim_etudiant (
+  id_student        INT NOT NULL,
+  gender            VARCHAR(10) DEFAULT NULL,
+  region            VARCHAR(50) DEFAULT NULL,
+  highest_education VARCHAR(50) DEFAULT NULL,
+  imd_band          VARCHAR(20) DEFAULT NULL,
+  age_band          VARCHAR(20) DEFAULT NULL,
+  disability        VARCHAR(5)  DEFAULT NULL,
+  num_of_prev       INT DEFAULT NULL,
+  studied_credits   INT DEFAULT NULL,
+  PRIMARY KEY (id_student)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- DIMENSION MODULE
+-- Contient les informations sur les modules de cours
+-- Clé composite : code_module + code_presentation
+-- ============================================================
+CREATE TABLE IF NOT EXISTS dim_module (
+  code_module                VARCHAR(10) NOT NULL,
+  code_presentation          VARCHAR(10) NOT NULL,
+  module_presentation_length INT DEFAULT NULL,
+  PRIMARY KEY (code_module, code_presentation)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- DIMENSION TEMPS
+-- Contient les informations temporelles (année, semestre)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS dim_temps (
+  code_presentation VARCHAR(10) NOT NULL,
+  annee             VARCHAR(4)  DEFAULT NULL,
+  semestre          VARCHAR(10) DEFAULT NULL,
+  PRIMARY KEY (code_presentation)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- DIMENSION EVALUATION
+-- Contient les informations sur les évaluations
+-- (TMA = Travail Maison, CMA = Machine, Examen)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS dim_evaluation (
+  id_assessment   INT NOT NULL,
+  code_module     VARCHAR(10)  DEFAULT NULL,
+  assessment_type VARCHAR(20)  DEFAULT NULL,
+  date_assessment INT          DEFAULT NULL,
+  weight          INT          DEFAULT NULL,
+  PRIMARY KEY (id_assessment)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================
+-- TABLE DE FAITS — FAIT_PERFORMANCE_ETUDIANT
+-- Table centrale du schéma en étoile
+-- Contient les KPIs et les clés étrangères vers les dimensions
+-- ============================================================
+CREATE TABLE IF NOT EXISTS fait_performance_etudiant (
+  id_student        INT          DEFAULT NULL,
+  code_module       VARCHAR(10)  DEFAULT NULL,
+  code_presentation VARCHAR(10)  DEFAULT NULL,
+  id_assessment     INT          DEFAULT NULL,
+  final_result      VARCHAR(20)  DEFAULT NULL,
+  score_moyen       DOUBLE       DEFAULT NULL,
+  total_clics       INT          DEFAULT NULL,
+  flag_a_risque     INT          DEFAULT NULL
+  -- flag_a_risque : 1 si score_moyen < 40 ET total_clics < 200, sinon 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+──────────────────────────────────────────────────────────────────────────────
+2.2  Clés étrangères (Foreign Keys)
+     Définition des relations entre la table de faits et les dimensions
+──────────────────────────────────────────────────────────────────────────────
+
+-- Relation : fait → dim_etudiant (via id_student)
+ALTER TABLE fait_performance_etudiant
+  ADD CONSTRAINT fk_etudiant
+  FOREIGN KEY (id_student) REFERENCES dim_etudiant(id_student);
+
+-- Relation : fait → dim_module (via code_module + code_presentation)
+ALTER TABLE fait_performance_etudiant
+  ADD CONSTRAINT fk_module
+  FOREIGN KEY (code_module, code_presentation)
+  REFERENCES dim_module(code_module, code_presentation);
+
+-- Relation : fait → dim_temps (via code_presentation)
+ALTER TABLE fait_performance_etudiant
+  ADD CONSTRAINT fk_temps
+  FOREIGN KEY (code_presentation) REFERENCES dim_temps(code_presentation);
+
+-- Relation : fait → dim_evaluation (via id_assessment)
+ALTER TABLE fait_performance_etudiant
+  ADD CONSTRAINT fk_evaluation
+  FOREIGN KEY (id_assessment) REFERENCES dim_evaluation(id_assessment);
+
+
+──────────────────────────────────────────────────────────────────────────────
+2.3  Vues Data Marts
+     Sous-ensembles thématiques du Data Warehouse
+     orientés vers des besoins analytiques spécifiques
+──────────────────────────────────────────────────────────────────────────────
+
+-- ============================================================
+-- DATAMART 1 : Performance Académique
+-- Destinataire : CEO
+-- Objectif : Analyser les performances par module et session
+-- ============================================================
+CREATE VIEW datamart_performance AS
+SELECT
+    f.id_student,
+    f.code_module,
+    f.code_presentation,
+    f.final_result,
+    f.score_moyen,
+    f.total_clics,
+    m.module_presentation_length,
+    t.annee,
+    t.semestre
+FROM fait_performance_etudiant f
+JOIN dim_module m
+    ON f.code_module = m.code_module
+    AND f.code_presentation = m.code_presentation
+JOIN dim_temps t
+    ON f.code_presentation = t.code_presentation;
+
+-- ============================================================
+-- DATAMART 2 : Risque & Abandon
+-- Destinataire : Directeur des Opérations
+-- Objectif : Identifier les étudiants en difficulté
+--            pour intervention précoce
+-- ============================================================
+CREATE VIEW datamart_risque AS
+SELECT
+    f.id_student,
+    f.code_module,
+    f.code_presentation,
+    f.score_moyen,
+    f.total_clics,
+    f.flag_a_risque,
+    f.final_result,
+    e.gender,
+    e.region,
+    e.imd_band,
+    e.age_band,
+    e.disability
+FROM fait_performance_etudiant f
+JOIN dim_etudiant e
+    ON f.id_student = e.id_student
+WHERE f.flag_a_risque = 1;
+
+
+════════════════════════════════════════════════════════════════════════════════
+   PARTIE 3 — MESURES DAX (Power BI Desktop)
+════════════════════════════════════════════════════════════════════════════════
+
+──────────────────────────────────────────────────────────────────────────────
+   Ces mesures sont définies dans Power BI Desktop et calculées dynamiquement
+   en fonction des filtres appliqués par l'utilisateur (slicers, drill-through)
+──────────────────────────────────────────────────────────────────────────────
+
+-- ============================================================
+-- MESURE 1 : Taux d'Abandon
+-- Calcule le pourcentage d'étudiants ayant abandonné (Withdrawn)
+-- KPI clé pour le CEO et le Directeur des Opérations
+-- ============================================================
+Taux_Abandon =
+DIVIDE(
+    COUNTROWS(
+        FILTER(
+            FAIT_PERFORMANCE_ETUDIANT,
+            FAIT_PERFORMANCE_ETUDIANT[final_result] = "Withdrawn"
+        )
+    ),
+    COUNTROWS(FAIT_PERFORMANCE_ETUDIANT)
+)
+-- Résultat : 31,16% → confirme la problématique du projet
+
+
+-- ============================================================
+-- MESURE 2 : Taux d'Échec
+-- Calcule le pourcentage d'étudiants ayant échoué (Fail)
+-- ============================================================
+Taux_Echec =
+DIVIDE(
+    COUNTROWS(
+        FILTER(
+            FAIT_PERFORMANCE_ETUDIANT,
+            FAIT_PERFORMANCE_ETUDIANT[final_result] = "Fail"
+        )
+    ),
+    COUNTROWS(FAIT_PERFORMANCE_ETUDIANT)
+)
+-- Résultat : 21,64%
+
+
+-- ============================================================
+-- MESURE 3 : Score Moyen
+-- Calcule la moyenne des scores de tous les étudiants
+-- ============================================================
+Moy_Score =
+AVERAGE(FAIT_PERFORMANCE_ETUDIANT[score_moyen])
+-- Résultat : 59,65 / 100
+
+
+-- ============================================================
+-- MESURE 4 : Étudiants À Risque
+-- Compte le nombre total d'étudiants identifiés à risque
+-- (flag_a_risque = 1, soit score < 40 ET clics < 200)
+-- ============================================================
+Etudiants_A_Risque =
+SUM(FAIT_PERFORMANCE_ETUDIANT[flag_a_risque])
+-- Résultat : ~6 000 étudiants nécessitant une intervention
+
+
+════════════════════════════════════════════════════════════════════════════════
+   FIN DU CODE SOURCE — PROJET EDUTECH
+   EPSI 2026 — Informatique Décisionnelle
+════════════════════════════════════════════════════════════════════════════════
